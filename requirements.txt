@@ -4,5 +4,6 @@ numpy
 opencv-python
 Pillow
 python-multipart
-tensorflow
 uvicorn
+tensorflow-cpu~=2.15.0
+
