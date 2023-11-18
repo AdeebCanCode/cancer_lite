@@ -1,31 +1,42 @@
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import JSONResponse
-import tensorflow as tf
+from fastapi import FastAPI, UploadFile
+from keras.models import load_model
 from keras.preprocessing import image
+from keras.applications.vgg19 import preprocess_input
 import numpy as np
+import tensorflow as tf
 import io
 
 app = FastAPI()
 
-# Load the pre-trained VGG16 model
-model = tf.keras.models.load_model('model.h5')
+# Load the model during startup
+model = load_model('model.h5')
 
-# Define class labels
-class_labels = ['normal', 'malignant']
+# Predict function with image resizing and direct processing
+def predict(img_data):
+    img = image.img_to_array(img_data)
+    img = np.expand_dims(img, axis=0)
+    img_data = preprocess_input(img)
+    classes = model.predict(img_data)
+    malignant = float(classes[0, 0])  # Convert to float
+    normal = float(classes[0, 1])     # Convert to float
+    return malignant, normal
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    try:
-        contents = await file.read()
-
-        # Convert binary content to file-like object
-        img = image.img_to_array(image.load_img(io.BytesIO(contents), target_size=(150, 150))) / 255.0
-        img = np.expand_dims(img, axis=0)
-
-        # Make predictions
-        prediction = model.predict(img)
-        predicted_class = class_labels[int(prediction[0, 0] > 0.5)]
-
-        return JSONResponse(content={"class": predicted_class, "confidence": float(prediction[0, 0])}, status_code=200)
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+@app.post("/predict/")
+async def predict_image(file: UploadFile):
+    # Read image file directly without saving
+    contents = await file.read()
+    img_data = image.load_img(io.BytesIO(contents), target_size=(224, 224))
+    
+    # Perform prediction on the image data
+    malignant, normal = predict(img_data)
+    
+    # Convert NumPy floats to Python floats
+    malignant = float(malignant)
+    normal = float(normal)
+    
+    if malignant > normal:
+        prediction = 'malignant'
+    else:
+        prediction = 'normal'
+    
+    return {"prediction": prediction, "malignant_prob": malignant, "normal_prob": normal}
